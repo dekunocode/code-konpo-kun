@@ -1,6 +1,15 @@
-MIT License
+# Third-Party Notices
 
-Copyright (c) 2026 dekunocode
+コード梱包くんは、次のオープンソースソフトウェアを利用しています。配布している実行ファイルには、これらが含まれます。
+
+| ソフトウェア | 著作権表示 | ライセンス |
+| --- | --- | --- |
+| [.NET Runtime / WPF](https://github.com/dotnet/runtime) | Copyright (c) .NET Foundation and Contributors | MIT |
+| [CommunityToolkit.Mvvm](https://github.com/CommunityToolkit/dotnet) | Copyright (c) .NET Foundation and Contributors | MIT |
+| [Material Design In XAML Toolkit](https://github.com/MaterialDesignInXAML/MaterialDesignInXamlToolkit) | Copyright (c) James Willock, Mulholland Software and Contributors | MIT |
+| [Microsoft.Extensions.DependencyInjection / FileSystemGlobbing](https://github.com/dotnet/runtime) | Copyright (c) .NET Foundation and Contributors | MIT |
+
+## MIT License
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

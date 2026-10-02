@@ -1,0 +1,43 @@
+name: Release
+
+# v1.2.3 のようなタグを push すると、実行ファイルを作って Releases に下書きとして載せる。
+# 動作を確かめてから、Releases の画面で「Publish release」を押して公開する。
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Test
+        run: dotnet test Project2Prompt.slnx -c Debug
+
+      - name: Publish
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart("v")
+          dotnet publish Project2Prompt/Project2Prompt.csproj -c Release -o publish -p:Version=$version
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $name = "code-konpo-kun-${{ github.ref_name }}-win-x64"
+          New-Item -ItemType Directory -Path $name | Out-Null
+          Copy-Item publish/Project2Prompt.exe, LICENSE, README.md, THIRD-PARTY-NOTICES.md -Destination $name
+          Compress-Archive -Path $name -DestinationPath "$name.zip"
+
+      - name: Create release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" "code-konpo-kun-${{ github.ref_name }}-win-x64.zip" --title "${{ github.ref_name }}" --generate-notes --draft
