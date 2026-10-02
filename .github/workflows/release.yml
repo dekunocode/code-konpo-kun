@@ -1,10 +1,15 @@
 name: Release
 
-# v1.2.3 のようなタグを push すると、実行ファイルを作って Releases に下書きとして載せる。
-# 動作を確かめてから、Releases の画面で「Publish release」を押して公開する。
+# Actions の画面で「Run workflow」を押し、バージョン（例: 1.0.0）を入れて実行する。
+# 実行ファイルを作って、Releases に下書きとして載せる。
+# 動作を確かめてから、Releases の画面で「Publish release」を押して公開する
+# （公開したときに、v1.0.0 のようなタグが作られる）。
 on:
-  push:
-    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "バージョン（例: 1.0.0）"
+        required: true
 
 permissions:
   contents: write
@@ -23,21 +28,18 @@ jobs:
         run: dotnet test Project2Prompt.slnx -c Debug
 
       - name: Publish
-        shell: pwsh
-        run: |
-          $version = "${{ github.ref_name }}".TrimStart("v")
-          dotnet publish Project2Prompt/Project2Prompt.csproj -c Release -o publish -p:Version=$version
+        run: dotnet publish Project2Prompt/Project2Prompt.csproj -c Release -o publish -p:Version=${{ inputs.version }}
 
       - name: Package
         shell: pwsh
         run: |
-          $name = "code-konpo-kun-${{ github.ref_name }}-win-x64"
+          $name = "code-konpo-kun-v${{ inputs.version }}-win-x64"
           New-Item -ItemType Directory -Path $name | Out-Null
           Copy-Item publish/Project2Prompt.exe, LICENSE, README.md, THIRD-PARTY-NOTICES.md -Destination $name
           Compress-Archive -Path $name -DestinationPath "$name.zip"
 
-      - name: Create release
+      - name: Create draft release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${{ github.ref_name }}" "code-konpo-kun-${{ github.ref_name }}-win-x64.zip" --title "${{ github.ref_name }}" --generate-notes --draft
+        run: gh release create "v${{ inputs.version }}" "code-konpo-kun-v${{ inputs.version }}-win-x64.zip" --target "${{ github.sha }}" --title "v${{ inputs.version }}" --generate-notes --draft
