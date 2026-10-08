@@ -40,6 +40,7 @@ public partial class MainViewModel : ObservableObject
         this.settingsService = settingsService;
         this.clipboardService = clipboardService;
         this.fileDialogService = fileDialogService;
+        ProjectPaths.CollectionChanged += (_, _) => RefreshCommand.NotifyCanExecuteChanged();
     }
 
     /// <summary>読み込み対象のプロジェクトフォルダパス一覧。</summary>
@@ -82,6 +83,7 @@ public partial class MainViewModel : ObservableObject
     [NotifyCanExecuteChangedFor(nameof(GenerateCommand))]
     [NotifyCanExecuteChangedFor(nameof(CopyCommand))]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
+    [NotifyCanExecuteChangedFor(nameof(RefreshCommand))]
     private bool isBusy;
 
     [ObservableProperty]
@@ -236,6 +238,22 @@ public partial class MainViewModel : ObservableObject
         await settingsService.SaveAsync(settings);
     }
 
+    /// <summary>今のフォルダを読み直して、編集後のファイル内容を反映します。</summary>
+    [RelayCommand(CanExecute = nameof(CanRefresh))]
+    private async Task RefreshAsync()
+    {
+        var regenerate = hasGeneratedOutput;
+        if (!await LoadProjectsAsync(keepSelection: true))
+        {
+            return;
+        }
+
+        if (regenerate && CanGenerate())
+        {
+            await GenerateAsync();
+        }
+    }
+
     [RelayCommand(CanExecute = nameof(CanGenerate))]
     private async Task GenerateAsync() => await RunOperationAsync(async token =>
     {
@@ -306,12 +324,19 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void Cancel() => operationCancellation?.Cancel();
 
-    private async Task LoadProjectsAsync() => await RunOperationAsync(async token =>
+    private Task<bool> LoadProjectsAsync(bool keepSelection = false) => RunOperationAsync(async token =>
     {
         SyncSettingsFromViewModel();
         settings.LastOpenedFolders = ProjectPaths.ToList();
         var progress = new Progress<string>(message => StatusMessage = message);
         var result = await projectScanner.ScanAsync(ProjectPaths.ToList(), settings, progress, token);
+
+        // 再読み込みのときは、前の選択状態を引き継ぐ（新しく増えたファイルは選択された状態）
+        var previousSelection = keepSelection
+            ? Files
+                .GroupBy(f => f.FullPath, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First().IsSelected, StringComparer.OrdinalIgnoreCase)
+            : null;
 
         foreach (var oldFile in Files)
         {
@@ -321,6 +346,11 @@ public partial class MainViewModel : ObservableObject
         Files.Clear();
         foreach (var file in result.Files)
         {
+            if (previousSelection is not null && previousSelection.TryGetValue(file.FullPath, out var wasSelected))
+            {
+                file.IsSelected = wasSelected;
+            }
+
             file.PropertyChanged += OnFilePropertyChanged;
             Files.Add(file);
         }
@@ -334,15 +364,15 @@ public partial class MainViewModel : ObservableObject
             : string.Join(Environment.NewLine, result.Warnings.Take(20).Prepend("読み込み警告:"));
         hasGeneratedOutput = false;
         NotifyCommandStates();
-        StatusMessage = $"読み込み完了 ({ProjectPaths.Count} プロジェクト): {Files.Count:N0} 対象 / {excludedFileCount:N0} 除外";
+        StatusMessage = $"{(keepSelection ? "再読み込み完了" : "読み込み完了")} ({ProjectPaths.Count} プロジェクト): {Files.Count:N0} 対象 / {excludedFileCount:N0} 除外";
         await settingsService.SaveAsync(settings, token);
     });
 
-    private async Task RunOperationAsync(Func<CancellationToken, Task> operation)
+    private async Task<bool> RunOperationAsync(Func<CancellationToken, Task> operation)
     {
         if (IsBusy)
         {
-            return;
+            return false;
         }
 
         operationCancellation = new CancellationTokenSource();
@@ -350,14 +380,17 @@ public partial class MainViewModel : ObservableObject
         try
         {
             await operation(operationCancellation.Token);
+            return true;
         }
         catch (OperationCanceledException)
         {
             StatusMessage = "処理をキャンセルしました";
+            return false;
         }
         catch (Exception ex)
         {
             StatusMessage = $"エラー: {ex.Message}";
+            return false;
         }
         finally
         {
@@ -428,6 +461,7 @@ public partial class MainViewModel : ObservableObject
 
     private bool CanGenerate() => !IsBusy && GetEffectiveSelection().Length > 0;
     private bool CanUseOutput() => !IsBusy && hasGeneratedOutput;
+    private bool CanRefresh() => !IsBusy && ProjectPaths.Count > 0;
 
     private void NotifyCommandStates()
     {

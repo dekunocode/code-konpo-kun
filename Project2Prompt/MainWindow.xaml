@@ -43,6 +43,9 @@
             <Setter Property="FontSize" Value="14" />
         </Style>
     </Window.Resources>
+    <Window.InputBindings>
+        <KeyBinding Key="F5" Command="{Binding RefreshCommand}" />
+    </Window.InputBindings>
 
     <Grid>
         <Grid.RowDefinitions>
@@ -129,6 +132,14 @@
                         <StackPanel Orientation="Horizontal">
                             <materialDesign:PackIcon Kind="FolderPlusOutline" Margin="0,0,5,0" />
                             <TextBlock Text="追加" />
+                        </StackPanel>
+                    </Button>
+                    <Button Command="{Binding RefreshCommand}" Margin="0,0,6,0"
+                            ToolTip="フォルダを読み直して、編集した内容を反映します (F5)"
+                            Style="{StaticResource MaterialDesignOutlinedButton}" Foreground="White" BorderBrush="White" Height="36" Padding="10,0">
+                        <StackPanel Orientation="Horizontal">
+                            <materialDesign:PackIcon Kind="Refresh" Margin="0,0,5,0" />
+                            <TextBlock Text="更新" />
                         </StackPanel>
                     </Button>
                     <Button Command="{Binding ClearProjectsCommand}"
