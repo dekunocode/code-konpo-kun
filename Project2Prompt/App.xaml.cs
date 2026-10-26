@@ -33,6 +33,9 @@ public partial class App : Application
         services.AddSingleton<IProjectProfile, CSharpProjectProfile>();
         services.AddSingleton<IProjectProfile, VisualBasicProjectProfile>();
         services.AddSingleton<IProjectProfile, PythonProjectProfile>();
+        services.AddSingleton<IProjectProfile, JavaProjectProfile>();
+        services.AddSingleton<IProjectProfile, GoProjectProfile>();
+        services.AddSingleton<IProjectProfile, CppProjectProfile>();
         services.AddSingleton<IProfileCatalog, ProfileCatalog>();
         services.AddSingleton<IFileFilterService, FileFilterService>();
         services.AddSingleton<ISecretScanner, SecretScanner>();

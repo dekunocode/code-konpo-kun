@@ -8,4 +8,7 @@ public enum ProjectKind
     CSharp = 1,
     VisualBasic = 2,
     Python = 4,
+    Java = 8,
+    Go = 16,
+    Cpp = 32,
 }

@@ -13,6 +13,8 @@ public sealed class FileFilterService : IFileFilterService
         "**/__pycache__/**", "**/.pytest_cache/**", "**/.mypy_cache/**", "**/.ruff_cache/**",
         "**/.venv/**", "**/venv/**", "**/env/**", "**/*.g.cs", "**/*.g.i.cs", "**/*.Designer.cs",
         "**/*.Designer.vb", "**/*.g.vb", "**/*.g.i.vb", "**/*.user", "**/*.suo",
+        "**/target/**", "**/.gradle/**", "**/out/**", "**/vendor/**", "**/x64/**", "**/ARM64/**",
+        "**/Debug/**", "**/Release/**", "**/cmake-build-*/**",
     ];
 
     /// <inheritdoc />

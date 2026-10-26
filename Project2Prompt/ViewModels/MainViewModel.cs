@@ -548,6 +548,9 @@ public partial class MainViewModel : ObservableObject
         if (kind.HasFlag(ProjectKind.CSharp)) names.Add("C#");
         if (kind.HasFlag(ProjectKind.VisualBasic)) names.Add("VB.NET");
         if (kind.HasFlag(ProjectKind.Python)) names.Add("Python");
+        if (kind.HasFlag(ProjectKind.Java)) names.Add("Java");
+        if (kind.HasFlag(ProjectKind.Go)) names.Add("Go");
+        if (kind.HasFlag(ProjectKind.Cpp)) names.Add("C/C++");
         return names.Count > 1 ? $"混在 ({string.Join(" + ", names)})" : names[0];
     }
 }
