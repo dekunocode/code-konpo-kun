@@ -40,12 +40,28 @@ public sealed class ProfileCatalog(IEnumerable<IProjectProfile> profiles) : IPro
     }
 
     /// <inheritdoc />
-    public string GetFenceLanguage(string path) => Path.GetExtension(path).ToLowerInvariant() switch
+    public string GetFenceLanguage(string path) => Path.GetFileName(path).ToLowerInvariant() switch
+    {
+        "cmakelists.txt" => "cmake",
+        "makefile" => "makefile",
+        _ => GetFenceLanguageByExtension(path),
+    };
+
+    private static string GetFenceLanguageByExtension(string path) => Path.GetExtension(path).ToLowerInvariant() switch
     {
         ".cs" => "csharp",
         ".vb" => "vbnet",
         ".py" or ".pyi" => "python",
-        ".xaml" or ".csproj" or ".vbproj" or ".xml" or ".config" or ".props" or ".targets" or ".resx" => "xml",
+        ".java" => "java",
+        ".gradle" => "groovy",
+        ".kts" => "kotlin",
+        ".properties" => "properties",
+        ".go" => "go",
+        ".c" or ".h" => "c",
+        ".cpp" or ".cc" or ".cxx" or ".hpp" or ".hh" or ".hxx" or ".inl" or ".ipp" => "cpp",
+        ".cmake" => "cmake",
+        ".mk" => "makefile",
+        ".xaml" or ".csproj" or ".vbproj" or ".vcxproj" or ".filters" or ".xml" or ".config" or ".props" or ".targets" or ".resx" => "xml",
         ".json" => "json",
         ".toml" => "toml",
         ".yaml" or ".yml" => "yaml",

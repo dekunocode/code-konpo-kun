@@ -69,3 +69,47 @@ public sealed class PythonProjectProfile : ProjectProfileBase
         "**/README.md", "**/LICENSE*",
     ];
 }
+
+/// <summary>Java用プロファイル。</summary>
+public sealed class JavaProjectProfile : ProjectProfileBase
+{
+    public override ProjectKind Kind => ProjectKind.Java;
+    public override string DisplayName => "Java";
+    public override IReadOnlyList<string> DetectionPatterns { get; } =
+        ["pom.xml", "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts"];
+    public override IReadOnlyList<string> IncludePatterns { get; } =
+    [
+        "**/*.java", "**/pom.xml", "**/*.gradle", "**/*.gradle.kts", "**/gradle.properties",
+        "**/gradle-wrapper.properties", "**/*.properties", "**/*.xml", "**/*.yaml", "**/*.yml",
+        "**/*.json", "**/README.md", "**/LICENSE*",
+    ];
+}
+
+/// <summary>Go用プロファイル。</summary>
+public sealed class GoProjectProfile : ProjectProfileBase
+{
+    public override ProjectKind Kind => ProjectKind.Go;
+    public override string DisplayName => "Go";
+    public override IReadOnlyList<string> DetectionPatterns { get; } = ["go.mod", "go.work"];
+    public override IReadOnlyList<string> IncludePatterns { get; } =
+    [
+        "**/*.go", "**/go.mod", "**/go.work", "**/Makefile", "**/*.toml", "**/*.yaml", "**/*.yml",
+        "**/*.json", "**/README.md", "**/LICENSE*",
+    ];
+}
+
+/// <summary>C/C++用プロファイル。</summary>
+public sealed class CppProjectProfile : ProjectProfileBase
+{
+    public override ProjectKind Kind => ProjectKind.Cpp;
+    public override string DisplayName => "C/C++";
+    public override IReadOnlyList<string> DetectionPatterns { get; } = ["CMakeLists.txt", "*.vcxproj", "meson.build"];
+    public override IReadOnlyList<string> IncludePatterns { get; } =
+    [
+        "**/*.c", "**/*.h", "**/*.cpp", "**/*.cc", "**/*.cxx", "**/*.hpp", "**/*.hh", "**/*.hxx",
+        "**/*.inl", "**/*.ipp", "**/CMakeLists.txt", "**/*.cmake", "**/CMakePresets.json",
+        "**/*.vcxproj", "**/*.vcxproj.filters", "**/*.props", "**/*.sln", "**/*.slnx",
+        "**/meson.build", "**/Makefile", "**/*.mk", "**/vcpkg.json", "**/conanfile.txt",
+        "**/.clang-format", "**/.editorconfig", "**/README.md", "**/LICENSE*",
+    ];
+}

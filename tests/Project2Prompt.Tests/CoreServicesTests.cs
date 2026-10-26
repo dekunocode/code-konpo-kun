@@ -12,6 +12,9 @@ public sealed class CoreServicesTests
         new CSharpProjectProfile(),
         new VisualBasicProjectProfile(),
         new PythonProjectProfile(),
+        new JavaProjectProfile(),
+        new GoProjectProfile(),
+        new CppProjectProfile(),
     ]);
 
     [Fact]
@@ -25,6 +28,103 @@ public sealed class CoreServicesTests
         Assert.True(kind.HasFlag(ProjectKind.Python));
         Assert.Equal("csharp", catalog.GetFenceLanguage("Program.cs"));
         Assert.Equal("python", catalog.GetFenceLanguage("script.py"));
+    }
+
+    [Theory]
+    [InlineData("pom.xml", ProjectKind.Java)]
+    [InlineData("app/build.gradle.kts", ProjectKind.Java)]
+    [InlineData("go.mod", ProjectKind.Go)]
+    [InlineData("CMakeLists.txt", ProjectKind.Cpp)]
+    [InlineData("Engine/Engine.vcxproj", ProjectKind.Cpp)]
+    public void ProfileCatalog_DetectsJavaGoAndCpp(string marker, ProjectKind expected)
+    {
+        var catalog = CreateCatalog();
+
+        Assert.Equal(expected, catalog.Detect([marker]));
+    }
+
+    [Fact]
+    public void ProfileCatalog_IncludesOnlyDetectedLanguageSources()
+    {
+        var catalog = CreateCatalog();
+
+        Assert.True(catalog.IsIncluded("src/main/java/App.java", ProjectKind.Java));
+        Assert.True(catalog.IsIncluded("cmd/server/main.go", ProjectKind.Go));
+        Assert.True(catalog.IsIncluded("src/engine.cpp", ProjectKind.Cpp));
+        Assert.True(catalog.IsIncluded("include/engine.h", ProjectKind.Cpp));
+        Assert.False(catalog.IsIncluded("go.sum", ProjectKind.Go));
+        Assert.False(catalog.IsIncluded("main.go", ProjectKind.Java));
+    }
+
+    [Theory]
+    [InlineData("App.java", "java")]
+    [InlineData("build.gradle", "groovy")]
+    [InlineData("main.go", "go")]
+    [InlineData("util.c", "c")]
+    [InlineData("util.h", "c")]
+    [InlineData("engine.cpp", "cpp")]
+    [InlineData("engine.hpp", "cpp")]
+    [InlineData("CMakeLists.txt", "cmake")]
+    [InlineData("sub/Makefile", "makefile")]
+    [InlineData("Engine.vcxproj", "xml")]
+    [InlineData("notes.txt", "")]
+    public void ProfileCatalog_ReturnsFenceLanguage(string path, string expected)
+    {
+        Assert.Equal(expected, CreateCatalog().GetFenceLanguage(path));
+    }
+
+    [Theory]
+    [InlineData("target/classes/App.class")]
+    [InlineData(".gradle/8.0/file.lock")]
+    [InlineData("vendor/github.com/pkg/errors/errors.go")]
+    [InlineData("x64/Debug/Engine.obj")]
+    [InlineData("Engine/Release/Engine.pdb")]
+    [InlineData("cmake-build-debug/CMakeCache.txt")]
+    public void FileFilterService_ExcludesJavaGoAndCppBuildOutputs(string path)
+    {
+        Assert.True(new FileFilterService().IsExcluded(path, new AppSettings()));
+    }
+
+    [Fact]
+    public async Task MarkdownExporter_RemovesComments_ForJavaAndCpp()
+    {
+        const string content = "String url = \"https://example.com\"; // remove me\n/* block */\nchar c = '/';\nint x = 1;";
+        var exporter = new MarkdownExporter(new TreeBuilder(), CreateCatalog(), new SecretScanner());
+
+        foreach (var path in new[] { "App.java", "engine.cpp", "util.h" })
+        {
+            var result = await exporter.ExportAsync(
+                ["Sample"],
+                [CreateFile(path, content)],
+                new AppSettings { RemoveComments = true },
+                CancellationToken.None);
+
+            Assert.Contains("https://example.com", result, StringComparison.Ordinal);
+            Assert.Contains("char c = '/';", result, StringComparison.Ordinal);
+            Assert.Contains("int x = 1;", result, StringComparison.Ordinal);
+            Assert.DoesNotContain("remove me", result, StringComparison.Ordinal);
+            Assert.DoesNotContain("block", result, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public async Task MarkdownExporter_RemovesGoComments_AndKeepsRawStrings()
+    {
+        const string content = "var pattern = `// not a comment \"quoted`\nvar url = \"https://example.com\" // remove me\n/* block */\nvar x = 1";
+        var exporter = new MarkdownExporter(new TreeBuilder(), CreateCatalog(), new SecretScanner());
+
+        var result = await exporter.ExportAsync(
+            ["Sample"],
+            [CreateFile("main.go", content)],
+            new AppSettings { RemoveComments = true },
+            CancellationToken.None);
+
+        Assert.Contains("```go", result, StringComparison.Ordinal);
+        Assert.Contains("`// not a comment \"quoted`", result, StringComparison.Ordinal);
+        Assert.Contains("https://example.com", result, StringComparison.Ordinal);
+        Assert.Contains("var x = 1", result, StringComparison.Ordinal);
+        Assert.DoesNotContain("remove me", result, StringComparison.Ordinal);
+        Assert.DoesNotContain("block", result, StringComparison.Ordinal);
     }
 
     [Fact]

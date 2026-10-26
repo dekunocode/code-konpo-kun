@@ -220,14 +220,17 @@ internal static partial class CommentStripper
 {
     public static string Remove(string text, string extension) => extension.ToLowerInvariant() switch
     {
-        ".cs" => RemoveCStyle(text),
+        ".cs" => RemoveCStyle(text, allowVerbatimString: true),
+        ".java" or ".gradle" or ".kts" => RemoveCStyle(text),
+        ".c" or ".h" or ".cpp" or ".cc" or ".cxx" or ".hpp" or ".hh" or ".hxx" or ".inl" or ".ipp" => RemoveCStyle(text),
+        ".go" => RemoveCStyle(text, allowRawBacktickString: true),
         ".vb" => RemoveLineStyle(text, "'"),
         ".py" or ".pyi" => RemovePythonComments(text),
-        ".xaml" or ".xml" or ".csproj" or ".vbproj" or ".props" or ".targets" or ".resx" => XmlCommentRegex().Replace(text, string.Empty),
+        ".xaml" or ".xml" or ".csproj" or ".vbproj" or ".vcxproj" or ".filters" or ".props" or ".targets" or ".resx" => XmlCommentRegex().Replace(text, string.Empty),
         _ => text,
     };
 
-    private static string RemoveCStyle(string text)
+    private static string RemoveCStyle(string text, bool allowVerbatimString = false, bool allowRawBacktickString = false)
     {
         var result = new StringBuilder(text.Length);
         var inString = false;
@@ -268,6 +271,16 @@ internal static partial class CommentStripper
                 continue;
             }
 
+            // Goの `...` はエスケープを持たないため、閉じのバッククォートまでそのまま残します。
+            if (allowRawBacktickString && !inString && !inCharacter && current == '`')
+            {
+                var end = text.IndexOf('`', index + 1);
+                if (end < 0) end = text.Length - 1;
+                result.Append(text, index, end - index + 1);
+                index = end;
+                continue;
+            }
+
             result.Append(current);
             if (!inCharacter && current == '"')
             {
@@ -288,7 +301,7 @@ internal static partial class CommentStripper
             {
                 inCharacter = !inCharacter;
             }
-            else if (!inString && !inCharacter && current == '@' && next == '"')
+            else if (allowVerbatimString && !inString && !inCharacter && current == '@' && next == '"')
             {
                 inVerbatimString = true;
             }
