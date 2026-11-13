@@ -9,6 +9,11 @@ namespace Project2Prompt.Services;
 public interface IProjectExporter
 {
     OutputFormat Format { get; }
+
+    /// <summary>見出し・ツリー・ファイルごとのブロックに分けた文書を作成します。</summary>
+    Task<ExportDocument> BuildAsync(IReadOnlyList<string> rootPaths, IReadOnlyList<ProjectFile> files, AppSettings settings, CancellationToken cancellationToken);
+
+    /// <summary>1つにつなげた文書を作成します。</summary>
     Task<string> ExportAsync(IReadOnlyList<string> rootPaths, IReadOnlyList<ProjectFile> files, AppSettings settings, CancellationToken cancellationToken);
 }
 
@@ -21,82 +26,46 @@ public sealed class MarkdownExporter(
     public OutputFormat Format => OutputFormat.Markdown;
 
     /// <inheritdoc />
-    public Task<string> ExportAsync(IReadOnlyList<string> rootPaths, IReadOnlyList<ProjectFile> files, AppSettings settings, CancellationToken cancellationToken) =>
+    public async Task<string> ExportAsync(IReadOnlyList<string> rootPaths, IReadOnlyList<ProjectFile> files, AppSettings settings, CancellationToken cancellationToken) =>
+        (await BuildAsync(rootPaths, files, settings, cancellationToken).ConfigureAwait(false)).ToText();
+
+    /// <inheritdoc />
+    public Task<ExportDocument> BuildAsync(IReadOnlyList<string> rootPaths, IReadOnlyList<ProjectFile> files, AppSettings settings, CancellationToken cancellationToken) =>
         Task.Run(() =>
         {
-            var builder = new StringBuilder();
-
-            var projectNames = files
-                .Select(f => f.ProjectName)
-                .Where(p => !string.IsNullOrEmpty(p))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList();
-
-            bool isMultiProject = projectNames.Count > 1;
-            string treeRootName;
-
-            if (isMultiProject)
+            var heading = ExportHeading.Create(rootPaths, files);
+            var title = heading.Kind switch
             {
-                builder.Append("# Workspace Projects: ").AppendLine(string.Join(", ", projectNames));
-                treeRootName = "Workspace";
-            }
-            else if (projectNames.Count == 1)
-            {
-                builder.Append("# Project: ").AppendLine(projectNames[0]);
-                treeRootName = projectNames[0];
-            }
-            else if (rootPaths.Count == 1)
-            {
-                var name = Path.GetFileName(rootPaths[0].TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-                builder.Append("# Project: ").AppendLine(name);
-                treeRootName = name;
-            }
-            else
-            {
-                builder.AppendLine("# Workspace");
-                treeRootName = "Workspace";
-            }
+                ExportHeadingKind.MultiProject => $"# Workspace Projects: {heading.Name}",
+                ExportHeadingKind.Project => $"# Project: {heading.Name}",
+                _ => "# Workspace",
+            };
 
-            builder.AppendLine();
+            var preamble = new StringBuilder();
+            preamble.AppendLine();
             if (settings.IncludeDirectoryTree)
             {
-                builder.AppendLine("## Directory Tree");
-                builder.AppendLine();
-                builder.AppendLine("```text");
-                builder.AppendLine(treeBuilder.BuildText(treeRootName, files));
-                builder.AppendLine("```");
-                builder.AppendLine();
+                preamble.AppendLine("## Directory Tree");
+                preamble.AppendLine();
+                preamble.AppendLine("```text");
+                preamble.AppendLine(treeBuilder.BuildText(heading.TreeRootName, files));
+                preamble.AppendLine("```");
+                preamble.AppendLine();
             }
 
-            var sortedFiles = files
-                .OrderBy(f => f.ProjectName, StringComparer.OrdinalIgnoreCase)
-                .ThenBy(f => f.RelativePath, StringComparer.OrdinalIgnoreCase);
-
-            foreach (var file in sortedFiles)
+            var blocks = new List<ExportBlock>();
+            foreach (var file in ExportHeading.Sort(files))
             {
                 cancellationToken.ThrowIfCancellationRequested();
-
-                var filePathDisplay = isMultiProject && !string.IsNullOrEmpty(file.ProjectName)
-                    ? $"{file.ProjectName}/{file.RelativePath}"
-                    : file.RelativePath;
-
-                builder.Append("## File: ").AppendLine(filePathDisplay);
-                builder.AppendLine();
-                if (settings.IncludeFileInfo)
-                {
-                    builder.Append("<!-- lines: ").Append(file.LineCount)
-                        .Append(", bytes: ").Append(file.Size).AppendLine(" -->");
-                }
-
-                var content = ExportTextProcessor.Process(file, settings, secretScanner);
-                var fence = content.Contains("```", StringComparison.Ordinal) ? "````" : "```";
-                builder.Append(fence).AppendLine(profileCatalog.GetFenceLanguage(file.RelativePath));
-                builder.AppendLine(content);
-                builder.AppendLine(fence);
-                builder.AppendLine();
+                var info = settings.IncludeFileInfo ? $"<!-- lines: {file.LineCount}, bytes: {file.Size} -->" : null;
+                blocks.Add(new ExportBlock(
+                    heading.GetDisplayPath(file),
+                    ExportTextProcessor.Process(file, settings, secretScanner),
+                    profileCatalog.GetFenceLanguage(file.RelativePath),
+                    info));
             }
 
-            return builder.ToString().TrimEnd() + Environment.NewLine;
+            return new ExportDocument(OutputFormat.Markdown, title, preamble.ToString(), blocks);
         }, cancellationToken);
 }
 
@@ -106,68 +75,87 @@ public sealed class TextExporter(ITreeBuilder treeBuilder, ISecretScanner secret
     public OutputFormat Format => OutputFormat.PlainText;
 
     /// <inheritdoc />
-    public Task<string> ExportAsync(IReadOnlyList<string> rootPaths, IReadOnlyList<ProjectFile> files, AppSettings settings, CancellationToken cancellationToken) =>
+    public async Task<string> ExportAsync(IReadOnlyList<string> rootPaths, IReadOnlyList<ProjectFile> files, AppSettings settings, CancellationToken cancellationToken) =>
+        (await BuildAsync(rootPaths, files, settings, cancellationToken).ConfigureAwait(false)).ToText();
+
+    /// <inheritdoc />
+    public Task<ExportDocument> BuildAsync(IReadOnlyList<string> rootPaths, IReadOnlyList<ProjectFile> files, AppSettings settings, CancellationToken cancellationToken) =>
         Task.Run(() =>
         {
-            var builder = new StringBuilder();
-
-            var projectNames = files
-                .Select(f => f.ProjectName)
-                .Where(p => !string.IsNullOrEmpty(p))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList();
-
-            bool isMultiProject = projectNames.Count > 1;
-            string treeRootName;
-
-            if (isMultiProject)
+            var heading = ExportHeading.Create(rootPaths, files);
+            var title = heading.Kind switch
             {
-                builder.Append("WORKSPACE PROJECTS: ").AppendLine(string.Join(", ", projectNames));
-                treeRootName = "Workspace";
-            }
-            else if (projectNames.Count == 1)
-            {
-                builder.Append("PROJECT: ").AppendLine(projectNames[0]);
-                treeRootName = projectNames[0];
-            }
-            else if (rootPaths.Count == 1)
-            {
-                var name = Path.GetFileName(rootPaths[0].TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-                builder.Append("PROJECT: ").AppendLine(name);
-                treeRootName = name;
-            }
-            else
-            {
-                builder.AppendLine("WORKSPACE");
-                treeRootName = "Workspace";
-            }
+                ExportHeadingKind.MultiProject => $"WORKSPACE PROJECTS: {heading.Name}",
+                ExportHeadingKind.Project => $"PROJECT: {heading.Name}",
+                _ => "WORKSPACE",
+            };
 
+            var preamble = new StringBuilder();
             if (settings.IncludeDirectoryTree)
             {
-                builder.AppendLine(new string('=', 72));
-                builder.AppendLine(treeBuilder.BuildText(treeRootName, files));
+                preamble.AppendLine(new string('=', 72));
+                preamble.AppendLine(treeBuilder.BuildText(heading.TreeRootName, files));
             }
 
-            var sortedFiles = files
-                .OrderBy(f => f.ProjectName, StringComparer.OrdinalIgnoreCase)
-                .ThenBy(f => f.RelativePath, StringComparer.OrdinalIgnoreCase);
-
-            foreach (var file in sortedFiles)
+            var blocks = new List<ExportBlock>();
+            foreach (var file in ExportHeading.Sort(files))
             {
                 cancellationToken.ThrowIfCancellationRequested();
-
-                var filePathDisplay = isMultiProject && !string.IsNullOrEmpty(file.ProjectName)
-                    ? $"{file.ProjectName}/{file.RelativePath}"
-                    : file.RelativePath;
-
-                builder.AppendLine().AppendLine(new string('=', 72));
-                builder.Append("FILE: ").AppendLine(filePathDisplay);
-                builder.AppendLine(new string('-', 72));
-                builder.AppendLine(ExportTextProcessor.Process(file, settings, secretScanner));
+                blocks.Add(new ExportBlock(
+                    heading.GetDisplayPath(file),
+                    ExportTextProcessor.Process(file, settings, secretScanner),
+                    string.Empty,
+                    null));
             }
 
-            return builder.ToString().TrimEnd() + Environment.NewLine;
+            return new ExportDocument(OutputFormat.PlainText, title, preamble.ToString(), blocks);
         }, cancellationToken);
+}
+
+internal enum ExportHeadingKind
+{
+    MultiProject,
+    Project,
+    Workspace,
+}
+
+/// <summary>出力の見出しとツリーの起点名を決めます。</summary>
+internal sealed record ExportHeading(ExportHeadingKind Kind, string Name, string TreeRootName, bool IsMultiProject)
+{
+    public static ExportHeading Create(IReadOnlyList<string> rootPaths, IReadOnlyList<ProjectFile> files)
+    {
+        var projectNames = files
+            .Select(f => f.ProjectName)
+            .Where(p => !string.IsNullOrEmpty(p))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (projectNames.Count > 1)
+        {
+            return new(ExportHeadingKind.MultiProject, string.Join(", ", projectNames), "Workspace", true);
+        }
+
+        if (projectNames.Count == 1)
+        {
+            return new(ExportHeadingKind.Project, projectNames[0], projectNames[0], false);
+        }
+
+        if (rootPaths.Count == 1)
+        {
+            var name = Path.GetFileName(rootPaths[0].TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            return new(ExportHeadingKind.Project, name, name, false);
+        }
+
+        return new(ExportHeadingKind.Workspace, string.Empty, "Workspace", false);
+    }
+
+    public static IEnumerable<ProjectFile> Sort(IEnumerable<ProjectFile> files) => files
+        .OrderBy(f => f.ProjectName, StringComparer.OrdinalIgnoreCase)
+        .ThenBy(f => f.RelativePath, StringComparer.OrdinalIgnoreCase);
+
+    public string GetDisplayPath(ProjectFile file) => IsMultiProject && !string.IsNullOrEmpty(file.ProjectName)
+        ? $"{file.ProjectName}/{file.RelativePath}"
+        : file.RelativePath;
 }
 
 internal static partial class ExportTextProcessor

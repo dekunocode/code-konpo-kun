@@ -275,6 +275,132 @@ public sealed class CoreServicesTests
         }
     }
 
+    [Theory]
+    [InlineData(OutputFormat.Markdown)]
+    [InlineData(OutputFormat.PlainText)]
+    public async Task Exporter_ExportAsync_MatchesDocumentText(OutputFormat format)
+    {
+        var files = new[] { CreateFile("A.cs", "class A {}"), CreateFile("B.cs", "class B {}") };
+        IProjectExporter exporter = format == OutputFormat.Markdown
+            ? new MarkdownExporter(new TreeBuilder(), CreateCatalog(), new SecretScanner())
+            : new TextExporter(new TreeBuilder(), new SecretScanner());
+
+        var text = await exporter.ExportAsync(["Sample"], files, new AppSettings(), CancellationToken.None);
+        var document = await exporter.BuildAsync(["Sample"], files, new AppSettings(), CancellationToken.None);
+
+        Assert.Equal(text, document.ToText());
+        Assert.Equal(2, document.Blocks.Count);
+    }
+
+    [Fact]
+    public async Task OutputSplitter_ReturnsSinglePart_WhenWithinLimit()
+    {
+        var exporter = new MarkdownExporter(new TreeBuilder(), CreateCatalog(), new SecretScanner());
+        var document = await exporter.BuildAsync(["Sample"], [CreateFile("A.cs", "class A {}")], new AppSettings(), CancellationToken.None);
+
+        var parts = OutputSplitter.Split(document, 350_000);
+
+        Assert.Single(parts);
+        Assert.Equal(document.ToText(), parts[0]);
+    }
+
+    [Theory]
+    [InlineData(OutputFormat.Markdown)]
+    [InlineData(OutputFormat.PlainText)]
+    public async Task OutputSplitter_SplitsAtFileBoundaries_WithinLimit(OutputFormat format)
+    {
+        const int limit = 4 * 1024;
+        var files = Enumerable.Range(0, 12)
+            .Select(i => CreateFile($"src/File{i:D2}.cs", string.Join('\n', Enumerable.Range(0, 40).Select(n => $"// 日本語のコメント {i}-{n}"))))
+            .ToArray();
+        IProjectExporter exporter = format == OutputFormat.Markdown
+            ? new MarkdownExporter(new TreeBuilder(), CreateCatalog(), new SecretScanner())
+            : new TextExporter(new TreeBuilder(), new SecretScanner());
+        var document = await exporter.BuildAsync(["Sample"], files, new AppSettings(), CancellationToken.None);
+
+        var parts = OutputSplitter.Split(document, limit);
+
+        Assert.True(parts.Count > 1);
+        Assert.All(parts, part => Assert.True(part.Length <= limit));
+        var fileHeader = format == OutputFormat.Markdown ? "## File: " : "FILE: ";
+        var treeHeader = format == OutputFormat.Markdown ? "## Directory Tree" : "File00.cs";
+        Assert.Contains(treeHeader, parts[0], StringComparison.Ordinal);
+        for (var i = 0; i < parts.Count; i++)
+        {
+            Assert.Contains($"{i + 1}/{parts.Count}", parts[i], StringComparison.Ordinal);
+        }
+
+        // どのファイルも、ちょうど1回だけ、どこかのパートに入っている
+        foreach (var file in files)
+        {
+            var header = $"{fileHeader}{file.RelativePath}";
+            Assert.Equal(1, parts.Sum(p => CountOccurrences(p, header + System.Environment.NewLine)));
+        }
+
+        Assert.DoesNotContain("## Directory Tree", parts[^1], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task OutputSplitter_SplitsLargeFileByLines_AndKeepsAllContent()
+    {
+        const int limit = 4 * 1024;
+        var lines = Enumerable.Range(0, 2000).Select(n => $"var line{n} = \"値{n}\";").ToArray();
+        var content = string.Join('\n', lines);
+        var exporter = new MarkdownExporter(new TreeBuilder(), CreateCatalog(), new SecretScanner());
+        var document = await exporter.BuildAsync(["Sample"], [CreateFile("Big.cs", content)], new AppSettings(), CancellationToken.None);
+
+        var parts = OutputSplitter.Split(document, limit);
+
+        Assert.True(parts.Count > 2);
+        Assert.All(parts, part => Assert.True(part.Length <= limit));
+        Assert.Contains("## File: Big.cs (part 1/", parts[0], StringComparison.Ordinal);
+        var joined = string.Concat(parts);
+        Assert.All(lines, line => Assert.Contains(line + "\n", joined.Replace("\r\n", "\n"), StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void OutputSplitter_SplitContent_HandlesVeryLongLine()
+    {
+        var line = new string('あ', 3000);
+
+        var chunks = OutputSplitter.SplitContent(line, 1024);
+
+        Assert.True(chunks.Count > 1);
+        Assert.All(chunks, chunk => Assert.True(chunk.Length <= 1024));
+        Assert.Equal(line, string.Concat(chunks));
+    }
+
+    [Fact]
+    public void OutputSplitter_GetPartPath_AddsPartNumbers()
+    {
+        var path = Path.Combine("out", "project-context.md");
+
+        Assert.Equal(Path.Combine("out", "project-context_part01of03.md"), OutputSplitter.GetPartPath(path, 1, 3));
+        Assert.Equal(Path.Combine("out", "project-context_part007of120.md"), OutputSplitter.GetPartPath(path, 7, 120));
+    }
+
+    [Fact]
+    public void TokenEstimator_MaxCharacters_StaysWithinTokenLimit()
+    {
+        var estimator = new TokenEstimator();
+
+        var characters = estimator.MaxCharacters(100_000);
+
+        Assert.Equal(350_000, characters);
+        Assert.True(estimator.Estimate(characters) <= 100_000);
+    }
+
+    private static int CountOccurrences(string text, string value)
+    {
+        var count = 0;
+        for (var index = text.IndexOf(value, StringComparison.Ordinal); index >= 0; index = text.IndexOf(value, index + value.Length, StringComparison.Ordinal))
+        {
+            count++;
+        }
+
+        return count;
+    }
+
     private static ProjectFile CreateFile(
         string relativePath,
         string content,

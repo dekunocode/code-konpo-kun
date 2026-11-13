@@ -14,5 +14,11 @@ public sealed class AppSettings
     public bool NormalizeBlankLines { get; set; }
     public bool RemoveRegions { get; set; }
     public bool AddLineNumbers { get; set; }
+
+    /// <summary>保存するとき、推定トークン数の上限ごとにファイルを分けるかどうか。</summary>
+    public bool SplitOutput { get; set; }
+
+    /// <summary>分けるときの1ファイルの上限（推定トークン数）。</summary>
+    public int SplitTokens { get; set; } = 100_000;
     public List<string> AdditionalExcludes { get; set; } = [];
 }

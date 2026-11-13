@@ -23,6 +23,8 @@ public partial class MainViewModel : ObservableObject
     private int excludedFileCount;
     private bool initialized;
     private bool hasGeneratedOutput;
+    private ExportDocument? lastDocument;
+    private IReadOnlyList<string> outputParts = [];
 
     public MainViewModel(
         IProjectScanner projectScanner,
@@ -121,6 +123,12 @@ public partial class MainViewModel : ObservableObject
 
     [ObservableProperty]
     private string excludePatternsText = string.Empty;
+
+    [ObservableProperty]
+    private bool splitOutput;
+
+    [ObservableProperty]
+    private int splitTokens = 100_000;
 
     /// <summary>保存設定を読み込みます。</summary>
     public async Task InitializeAsync()
@@ -228,6 +236,7 @@ public partial class MainViewModel : ObservableObject
         DetectionResult = "未選択";
         PreviewText = "プロジェクトフォルダを選択するか、ここへドロップしてください。";
         excludedFileCount = 0;
+        ClearOutput();
         UpdateStatistics();
         hasGeneratedOutput = false;
         NotifyCommandStates();
@@ -259,11 +268,16 @@ public partial class MainViewModel : ObservableObject
     {
         SyncSettingsFromViewModel();
         var selected = GetEffectiveSelection();
-        PreviewText = await exporters[OutputFormat].ExportAsync(ProjectPaths.ToList(), selected, settings, token);
+        var document = await exporters[OutputFormat].BuildAsync(ProjectPaths.ToList(), selected, settings, token);
+        PreviewText = document.ToText();
+        lastDocument = document;
+        outputParts = await Task.Run(() => SplitCurrentOutput(), token);
         hasGeneratedOutput = true;
         NotifyCommandStates();
         UpdateStatistics();
-        StatusMessage = $"{selected.Length:N0} ファイルを生成しました";
+        StatusMessage = outputParts.Count > 1
+            ? $"{selected.Length:N0} ファイルを生成しました（保存すると {outputParts.Count} ファイルに分かれます）"
+            : $"{selected.Length:N0} ファイルを生成しました";
         await settingsService.SaveAsync(settings, token);
     });
 
@@ -293,10 +307,25 @@ public partial class MainViewModel : ObservableObject
 
         await RunOperationAsync(async token =>
         {
-            await File.WriteAllTextAsync(path, PreviewText, new UTF8Encoding(false), token);
+            var parts = outputParts.Count > 0 ? outputParts : [PreviewText];
+            if (parts.Count == 1)
+            {
+                await File.WriteAllTextAsync(path, parts[0], new UTF8Encoding(false), token);
+                StatusMessage = $"保存しました: {path}";
+            }
+            else
+            {
+                for (var index = 0; index < parts.Count; index++)
+                {
+                    var partPath = OutputSplitter.GetPartPath(path, index + 1, parts.Count);
+                    await File.WriteAllTextAsync(partPath, parts[index], new UTF8Encoding(false), token);
+                }
+
+                StatusMessage = $"{parts.Count} ファイルに分けて保存しました: {OutputSplitter.GetPartPath(path, 1, parts.Count)} ほか";
+            }
+
             settings.OutputFolder = Path.GetDirectoryName(path) ?? string.Empty;
             await settingsService.SaveAsync(settings, token);
-            StatusMessage = $"保存しました: {path}";
         });
     }
 
@@ -359,6 +388,7 @@ public partial class MainViewModel : ObservableObject
         DetectionResult = FormatProjectKind(result.ProjectKind);
         RebuildTree();
         UpdateStatistics();
+        ClearOutput();
         PreviewText = result.Warnings.Count == 0
             ? "［生成］を押すと、選択ファイルのプレビューを作成します。"
             : string.Join(Environment.NewLine, result.Warnings.Take(20).Prepend("読み込み警告:"));
@@ -455,8 +485,43 @@ public partial class MainViewModel : ObservableObject
             characters,
             tokenEstimator.Estimate(characters),
             Encoding.UTF8.GetByteCount(PreviewText),
+            hasGeneratedOutput ? Math.Max(1, outputParts.Count) : 0,
             largest,
             mostLines);
+    }
+
+    /// <summary>今の分割設定で、生成済みの文書をパートに分けます。分けないときは1つだけ返します。</summary>
+    private IReadOnlyList<string> SplitCurrentOutput()
+    {
+        if (lastDocument is null)
+        {
+            return [];
+        }
+
+        return SplitOutput
+            ? OutputSplitter.Split(lastDocument, (int)Math.Min(int.MaxValue, tokenEstimator.MaxCharacters(SplitTokens)))
+            : [PreviewText];
+    }
+
+    private void ClearOutput()
+    {
+        lastDocument = null;
+        outputParts = [];
+    }
+
+    // 分割の設定はプレビューの中身を変えないので、生成し直さずにパートだけ作り直します。
+    private void RefreshOutputParts()
+    {
+        if (lastDocument is null || !hasGeneratedOutput)
+        {
+            return;
+        }
+
+        outputParts = SplitCurrentOutput();
+        UpdateStatistics();
+        StatusMessage = outputParts.Count > 1
+            ? $"保存すると {outputParts.Count} ファイルに分かれます"
+            : "保存すると 1 ファイルになります";
     }
 
     private bool CanGenerate() => !IsBusy && GetEffectiveSelection().Length > 0;
@@ -506,6 +571,19 @@ public partial class MainViewModel : ObservableObject
     partial void OnNormalizeBlankLinesChanged(bool value) => MarkOutputDirty();
     partial void OnRemoveRegionsChanged(bool value) => MarkOutputDirty();
     partial void OnAddLineNumbersChanged(bool value) => MarkOutputDirty();
+    partial void OnSplitOutputChanged(bool value) => RefreshOutputParts();
+
+    partial void OnSplitTokensChanged(int value)
+    {
+        const int minimumTokens = 1_000;
+        if (value < minimumTokens)
+        {
+            SplitTokens = minimumTokens;
+            return;
+        }
+
+        RefreshOutputParts();
+    }
 
     private void ApplySettingsToViewModel()
     {
@@ -518,6 +596,8 @@ public partial class MainViewModel : ObservableObject
         NormalizeBlankLines = settings.NormalizeBlankLines;
         RemoveRegions = settings.RemoveRegions;
         AddLineNumbers = settings.AddLineNumbers;
+        SplitOutput = settings.SplitOutput;
+        SplitTokens = settings.SplitTokens;
         ExcludePatternsText = string.Join(Environment.NewLine, settings.AdditionalExcludes);
     }
 
@@ -532,6 +612,8 @@ public partial class MainViewModel : ObservableObject
         settings.NormalizeBlankLines = NormalizeBlankLines;
         settings.RemoveRegions = RemoveRegions;
         settings.AddLineNumbers = AddLineNumbers;
+        settings.SplitOutput = SplitOutput;
+        settings.SplitTokens = SplitTokens;
         settings.AdditionalExcludes = ExcludePatternsText
             .Split(['\r', '\n', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .ToList();

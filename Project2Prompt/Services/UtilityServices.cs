@@ -10,11 +10,18 @@ namespace Project2Prompt.Services;
 public interface ITokenEstimator
 {
     long Estimate(long characterCount);
+
+    /// <summary>推定トークン数が指定の数に収まる、最大の文字数を返します。</summary>
+    long MaxCharacters(long tokenCount);
 }
 
 public sealed class TokenEstimator : ITokenEstimator
 {
-    public long Estimate(long characterCount) => (long)Math.Ceiling(characterCount / 3.5d);
+    private const double CharactersPerToken = 3.5d;
+
+    public long Estimate(long characterCount) => (long)Math.Ceiling(characterCount / CharactersPerToken);
+
+    public long MaxCharacters(long tokenCount) => (long)Math.Floor(tokenCount * CharactersPerToken);
 }
 
 /// <summary>JSON設定をユーザー領域へ保存します。</summary>
