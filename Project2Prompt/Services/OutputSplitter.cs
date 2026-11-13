@@ -159,7 +159,7 @@ public static class OutputSplitter
         return builder.ToString();
     }
 
-    private static long HeaderBytes(ExportDocument document, IEnumerable<string> labels) =>
+    private static int HeaderBytes(ExportDocument document, IEnumerable<string> labels) =>
         Utf8.GetByteCount(Header(document, PlaceholderNumber, PlaceholderNumber, labels));
 
     private static string Continuation(string number, string count) => $"part {number}/{count} of this file";
