@@ -3,34 +3,34 @@ using Project2Prompt.Models;
 
 namespace Project2Prompt.Services;
 
-/// <summary>出力文書を、指定したバイト数以下の複数のパートに分けます。</summary>
+/// <summary>出力文書を、指定した文字数以下の複数のパートに分けます。</summary>
 /// <remarks>
 /// ファイルの境目で区切ります。1ファイルだけで上限を超えるときは、そのファイルを行で区切ります。
-/// ディレクトリツリーは最初のパートにだけ入れます。サイズはUTF-8（BOMなし）のバイト数で数えます。
+/// ディレクトリツリーは最初のパートにだけ入れます。
+/// 推定トークン数は文字数から割り出しているので、トークン数の上限は文字数に直してから渡します。
 /// </remarks>
 public static class OutputSplitter
 {
-    /// <summary>上限として指定できる最小のバイト数。</summary>
-    public const int MinimumMaxBytes = 4 * 1024;
+    /// <summary>上限として指定できる最小の文字数。</summary>
+    public const int MinimumMaxCharacters = 4 * 1024;
 
     // パート番号やファイル内の分割番号は、見積もりのときだけ3桁の仮の値で数えます。
     private const string PlaceholderNumber = "999";
-    private static readonly UTF8Encoding Utf8 = new(false);
 
     /// <summary>文書をパートに分けます。上限に収まるときは、分けずに1つだけ返します。</summary>
     /// <param name="document">分ける文書。</param>
-    /// <param name="maxBytes">1パートの上限バイト数。</param>
-    public static IReadOnlyList<string> Split(ExportDocument document, int maxBytes)
+    /// <param name="maxCharacters">1パートの上限文字数。</param>
+    public static IReadOnlyList<string> Split(ExportDocument document, int maxCharacters)
     {
-        maxBytes = Math.Max(maxBytes, MinimumMaxBytes);
+        maxCharacters = Math.Max(maxCharacters, MinimumMaxCharacters);
         var whole = document.ToText();
-        if (Utf8.GetByteCount(whole) <= maxBytes)
+        if (whole.Length <= maxCharacters)
         {
             return [whole];
         }
 
-        var units = CreateUnits(document, maxBytes);
-        var groups = Pack(document, units, maxBytes);
+        var units = CreateUnits(document, maxCharacters);
+        var groups = Pack(document, units, maxCharacters);
         return groups
             .Select((group, index) => RenderPart(document, index + 1, groups.Count, group))
             .ToList();
@@ -47,9 +47,9 @@ public static class OutputSplitter
         return Path.Combine(directory, fileName);
     }
 
-    private static List<Unit> CreateUnits(ExportDocument document, int maxBytes)
+    private static List<Unit> CreateUnits(ExportDocument document, int maxCharacters)
     {
-        var preambleBytes = Utf8.GetByteCount(document.Preamble);
+        var preambleLength = document.Preamble.Length;
         var units = new List<Unit>();
         foreach (var block in document.Blocks)
         {
@@ -57,16 +57,16 @@ public static class OutputSplitter
             var placeholderLabel = $"{block.DisplayPath} ({Continuation(PlaceholderNumber, PlaceholderNumber)})";
 
             // どのパートに入っても収まるように、ツリーの分も差し引いて見積もります。
-            var budget = maxBytes - HeaderBytes(document, [placeholderLabel]) - preambleBytes;
-            if (Utf8.GetByteCount(text) <= budget)
+            var budget = maxCharacters - HeaderLength(document, [placeholderLabel]) - preambleLength;
+            if (text.Length <= budget)
             {
                 units.Add(new Unit(block.DisplayPath, text));
                 continue;
             }
 
-            var overhead = Utf8.GetByteCount(document.RenderBlock(
+            var overhead = document.RenderBlock(
                 block with { Content = "````" },
-                Continuation(PlaceholderNumber, PlaceholderNumber)));
+                Continuation(PlaceholderNumber, PlaceholderNumber)).Length;
             var contentBudget = Math.Max(1024, budget - overhead);
             var chunks = SplitContent(block.Content, contentBudget);
             for (var index = 0; index < chunks.Count; index++)
@@ -81,30 +81,30 @@ public static class OutputSplitter
         return units;
     }
 
-    private static List<List<Unit>> Pack(ExportDocument document, List<Unit> units, int maxBytes)
+    private static List<List<Unit>> Pack(ExportDocument document, List<Unit> units, int maxCharacters)
     {
-        var preambleBytes = Utf8.GetByteCount(document.Preamble);
-        var baseHeaderBytes = HeaderBytes(document, []);
+        var preambleLength = document.Preamble.Length;
+        var baseHeaderLength = HeaderLength(document, []);
         var groups = new List<List<Unit>>();
         var current = new List<Unit>();
-        long currentBytes = 0;
+        long currentLength = 0;
 
         foreach (var unit in units)
         {
             // 見出しのファイル一覧に1行ずつ増える分も含めて数えます。
-            var size = baseHeaderBytes
-                + (groups.Count == 0 ? preambleBytes : 0)
-                + currentBytes
-                + unit.Bytes + unit.ListLineBytes;
-            if (current.Count > 0 && size > maxBytes)
+            var size = baseHeaderLength
+                + (groups.Count == 0 ? preambleLength : 0)
+                + currentLength
+                + unit.Length + unit.ListLineLength;
+            if (current.Count > 0 && size > maxCharacters)
             {
                 groups.Add(current);
                 current = [];
-                currentBytes = 0;
+                currentLength = 0;
             }
 
             current.Add(unit);
-            currentBytes += unit.Bytes + unit.ListLineBytes;
+            currentLength += unit.Length + unit.ListLineLength;
         }
 
         groups.Add(current);
@@ -159,65 +159,65 @@ public static class OutputSplitter
         return builder.ToString();
     }
 
-    private static int HeaderBytes(ExportDocument document, IEnumerable<string> labels) =>
-        Utf8.GetByteCount(Header(document, PlaceholderNumber, PlaceholderNumber, labels));
+    private static int HeaderLength(ExportDocument document, IEnumerable<string> labels) =>
+        Header(document, PlaceholderNumber, PlaceholderNumber, labels).Length;
 
     private static string Continuation(string number, string count) => $"part {number}/{count} of this file";
 
-    /// <summary>ファイル内容を、行の境目でおおよそ指定バイト数以下に区切ります。</summary>
-    public static List<string> SplitContent(string content, int maxBytes)
+    /// <summary>ファイル内容を、行の境目で指定文字数以下に区切ります。</summary>
+    public static List<string> SplitContent(string content, int maxCharacters)
     {
         var chunks = new List<string>();
         var current = new StringBuilder();
-        var currentBytes = 0;
+        var currentLength = 0;
 
         void Flush()
         {
             if (current.Length == 0) return;
             chunks.Add(current.ToString(0, current.Length - 1)); // 最後の改行を外す
             current.Clear();
-            currentBytes = 0;
+            currentLength = 0;
         }
 
         foreach (var line in content.Split('\n'))
         {
-            var lineBytes = Utf8.GetByteCount(line) + 1;
-            if (lineBytes > maxBytes)
+            var lineLength = line.Length + 1;
+            if (lineLength > maxCharacters)
             {
                 // 1行だけで上限を超える（圧縮されたコードなど）ときは、行の途中で区切ります。
                 Flush();
-                chunks.AddRange(SplitLongLine(line, maxBytes));
+                chunks.AddRange(SplitLongLine(line, maxCharacters));
                 continue;
             }
 
-            if (currentBytes + lineBytes > maxBytes)
+            if (currentLength + lineLength > maxCharacters)
             {
                 Flush();
             }
 
             current.Append(line).Append('\n');
-            currentBytes += lineBytes;
+            currentLength += lineLength;
         }
 
         Flush();
         return chunks;
     }
 
-    private static IEnumerable<string> SplitLongLine(string line, int maxBytes)
+    private static IEnumerable<string> SplitLongLine(string line, int maxCharacters)
     {
         var current = new StringBuilder();
-        var currentBytes = 0;
+        var currentLength = 0;
         foreach (var rune in line.EnumerateRunes())
         {
-            if (currentBytes + rune.Utf8SequenceLength > maxBytes)
+            if (currentLength + rune.Utf16SequenceLength > maxCharacters)
             {
                 yield return current.ToString();
                 current.Clear();
-                currentBytes = 0;
+                currentLength = 0;
             }
 
             current.Append(rune.ToString());
-            currentBytes += rune.Utf8SequenceLength;
+            currentLength += rune.Utf16SequenceLength;
         }
 
         if (current.Length > 0)
@@ -228,8 +228,8 @@ public static class OutputSplitter
 
     private sealed record Unit(string Label, string Text)
     {
-        public long Bytes { get; } = Utf8.GetByteCount(Text);
+        public long Length { get; } = Text.Length;
 
-        public long ListLineBytes { get; } = Utf8.GetByteCount($"- {Label}{Environment.NewLine}");
+        public long ListLineLength { get; } = $"- {Label}{Environment.NewLine}".Length;
     }
 }

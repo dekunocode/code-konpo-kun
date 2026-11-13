@@ -260,10 +260,10 @@
                             </WrapPanel>
                             <StackPanel Orientation="Horizontal" Margin="0,4,0,6">
                                 <CheckBox Content="分割して保存" IsChecked="{Binding SplitOutput}" VerticalAlignment="Center" Margin="0,3,12,3"
-                                          ToolTip="保存するとき、上限のサイズごとにファイルを分けます。ファイルの途中では区切りません（1ファイルだけで上限を超えるときを除く）" />
-                                <TextBox Text="{Binding SplitSizeKb}" Width="64" VerticalAlignment="Center" HorizontalContentAlignment="Right"
+                                          ToolTip="保存するとき、推定トークン数の上限ごとにファイルを分けます。ファイルの途中では区切りません（1ファイルだけで上限を超えるときを除く）" />
+                                <TextBox Text="{Binding SplitTokens}" Width="80" VerticalAlignment="Center" HorizontalContentAlignment="Right"
                                          materialDesign:HintAssist.Hint="上限" IsEnabled="{Binding SplitOutput}" />
-                                <TextBlock Text="KB / ファイル" VerticalAlignment="Center" Margin="6,0,0,0" />
+                                <TextBlock Text="トークン / ファイル（推定）" VerticalAlignment="Center" Margin="6,0,0,0" />
                             </StackPanel>
                             <TextBox Text="{Binding ExcludePatternsText, UpdateSourceTrigger=PropertyChanged}"
                                      materialDesign:HintAssist.Hint="追加除外パターン（1行1件）" MinLines="1" MaxLines="3" />

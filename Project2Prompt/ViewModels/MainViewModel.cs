@@ -128,7 +128,7 @@ public partial class MainViewModel : ObservableObject
     private bool splitOutput;
 
     [ObservableProperty]
-    private int splitSizeKb = 200;
+    private int splitTokens = 100_000;
 
     /// <summary>保存設定を読み込みます。</summary>
     public async Task InitializeAsync()
@@ -499,7 +499,7 @@ public partial class MainViewModel : ObservableObject
         }
 
         return SplitOutput
-            ? OutputSplitter.Split(lastDocument, SplitSizeKb * 1024)
+            ? OutputSplitter.Split(lastDocument, (int)Math.Min(int.MaxValue, tokenEstimator.MaxCharacters(SplitTokens)))
             : [PreviewText];
     }
 
@@ -573,12 +573,12 @@ public partial class MainViewModel : ObservableObject
     partial void OnAddLineNumbersChanged(bool value) => MarkOutputDirty();
     partial void OnSplitOutputChanged(bool value) => RefreshOutputParts();
 
-    partial void OnSplitSizeKbChanged(int value)
+    partial void OnSplitTokensChanged(int value)
     {
-        var minimumKb = OutputSplitter.MinimumMaxBytes / 1024;
-        if (value < minimumKb)
+        const int minimumTokens = 1_000;
+        if (value < minimumTokens)
         {
-            SplitSizeKb = minimumKb;
+            SplitTokens = minimumTokens;
             return;
         }
 
@@ -597,7 +597,7 @@ public partial class MainViewModel : ObservableObject
         RemoveRegions = settings.RemoveRegions;
         AddLineNumbers = settings.AddLineNumbers;
         SplitOutput = settings.SplitOutput;
-        SplitSizeKb = settings.SplitSizeKb;
+        SplitTokens = settings.SplitTokens;
         ExcludePatternsText = string.Join(Environment.NewLine, settings.AdditionalExcludes);
     }
 
@@ -613,7 +613,7 @@ public partial class MainViewModel : ObservableObject
         settings.RemoveRegions = RemoveRegions;
         settings.AddLineNumbers = AddLineNumbers;
         settings.SplitOutput = SplitOutput;
-        settings.SplitSizeKb = SplitSizeKb;
+        settings.SplitTokens = SplitTokens;
         settings.AdditionalExcludes = ExcludePatternsText
             .Split(['\r', '\n', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .ToList();

@@ -298,7 +298,7 @@ public sealed class CoreServicesTests
         var exporter = new MarkdownExporter(new TreeBuilder(), CreateCatalog(), new SecretScanner());
         var document = await exporter.BuildAsync(["Sample"], [CreateFile("A.cs", "class A {}")], new AppSettings(), CancellationToken.None);
 
-        var parts = OutputSplitter.Split(document, 200 * 1024);
+        var parts = OutputSplitter.Split(document, 350_000);
 
         Assert.Single(parts);
         Assert.Equal(document.ToText(), parts[0]);
@@ -309,7 +309,7 @@ public sealed class CoreServicesTests
     [InlineData(OutputFormat.PlainText)]
     public async Task OutputSplitter_SplitsAtFileBoundaries_WithinLimit(OutputFormat format)
     {
-        const int limit = 8 * 1024;
+        const int limit = 4 * 1024;
         var files = Enumerable.Range(0, 12)
             .Select(i => CreateFile($"src/File{i:D2}.cs", string.Join('\n', Enumerable.Range(0, 40).Select(n => $"// 日本語のコメント {i}-{n}"))))
             .ToArray();
@@ -321,7 +321,7 @@ public sealed class CoreServicesTests
         var parts = OutputSplitter.Split(document, limit);
 
         Assert.True(parts.Count > 1);
-        Assert.All(parts, part => Assert.True(System.Text.Encoding.UTF8.GetByteCount(part) <= limit));
+        Assert.All(parts, part => Assert.True(part.Length <= limit));
         var fileHeader = format == OutputFormat.Markdown ? "## File: " : "FILE: ";
         var treeHeader = format == OutputFormat.Markdown ? "## Directory Tree" : "File00.cs";
         Assert.Contains(treeHeader, parts[0], StringComparison.Ordinal);
@@ -343,7 +343,7 @@ public sealed class CoreServicesTests
     [Fact]
     public async Task OutputSplitter_SplitsLargeFileByLines_AndKeepsAllContent()
     {
-        const int limit = 8 * 1024;
+        const int limit = 4 * 1024;
         var lines = Enumerable.Range(0, 2000).Select(n => $"var line{n} = \"値{n}\";").ToArray();
         var content = string.Join('\n', lines);
         var exporter = new MarkdownExporter(new TreeBuilder(), CreateCatalog(), new SecretScanner());
@@ -352,7 +352,7 @@ public sealed class CoreServicesTests
         var parts = OutputSplitter.Split(document, limit);
 
         Assert.True(parts.Count > 2);
-        Assert.All(parts, part => Assert.True(System.Text.Encoding.UTF8.GetByteCount(part) <= limit));
+        Assert.All(parts, part => Assert.True(part.Length <= limit));
         Assert.Contains("## File: Big.cs (part 1/", parts[0], StringComparison.Ordinal);
         var joined = string.Concat(parts);
         Assert.All(lines, line => Assert.Contains(line + "\n", joined.Replace("\r\n", "\n"), StringComparison.Ordinal));
@@ -366,7 +366,7 @@ public sealed class CoreServicesTests
         var chunks = OutputSplitter.SplitContent(line, 1024);
 
         Assert.True(chunks.Count > 1);
-        Assert.All(chunks, chunk => Assert.True(System.Text.Encoding.UTF8.GetByteCount(chunk) <= 1024));
+        Assert.All(chunks, chunk => Assert.True(chunk.Length <= 1024));
         Assert.Equal(line, string.Concat(chunks));
     }
 
@@ -377,6 +377,17 @@ public sealed class CoreServicesTests
 
         Assert.Equal(Path.Combine("out", "project-context_part01of03.md"), OutputSplitter.GetPartPath(path, 1, 3));
         Assert.Equal(Path.Combine("out", "project-context_part007of120.md"), OutputSplitter.GetPartPath(path, 7, 120));
+    }
+
+    [Fact]
+    public void TokenEstimator_MaxCharacters_StaysWithinTokenLimit()
+    {
+        var estimator = new TokenEstimator();
+
+        var characters = estimator.MaxCharacters(100_000);
+
+        Assert.Equal(350_000, characters);
+        Assert.True(estimator.Estimate(characters) <= 100_000);
     }
 
     private static int CountOccurrences(string text, string value)
