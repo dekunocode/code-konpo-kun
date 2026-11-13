@@ -14,5 +14,11 @@ public sealed class AppSettings
     public bool NormalizeBlankLines { get; set; }
     public bool RemoveRegions { get; set; }
     public bool AddLineNumbers { get; set; }
+
+    /// <summary>保存するとき、上限サイズごとにファイルを分けるかどうか。</summary>
+    public bool SplitOutput { get; set; }
+
+    /// <summary>分けるときの1ファイルの上限（KB、1KB=1024バイト）。</summary>
+    public int SplitSizeKb { get; set; } = 200;
     public List<string> AdditionalExcludes { get; set; } = [];
 }

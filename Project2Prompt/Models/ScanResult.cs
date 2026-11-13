@@ -16,9 +16,10 @@ public sealed record ProjectStatistics(
     long TotalCharacters,
     long EstimatedTokens,
     long OutputBytes,
+    int OutputParts,
     string LargestFile,
     string MostLinesFile)
 {
     /// <summary>空の統計値。</summary>
-    public static ProjectStatistics Empty { get; } = new(0, 0, 0, 0, 0, 0, "-", "-");
+    public static ProjectStatistics Empty { get; } = new(0, 0, 0, 0, 0, 0, 0, "-", "-");
 }

@@ -258,6 +258,13 @@
                                 <CheckBox Content="#region削除" IsChecked="{Binding RemoveRegions}" Margin="0,3,16,3" />
                                 <CheckBox Content="行番号追加" IsChecked="{Binding AddLineNumbers}" Margin="0,3,16,3" />
                             </WrapPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,4,0,6">
+                                <CheckBox Content="分割して保存" IsChecked="{Binding SplitOutput}" VerticalAlignment="Center" Margin="0,3,12,3"
+                                          ToolTip="保存するとき、上限のサイズごとにファイルを分けます。ファイルの途中では区切りません（1ファイルだけで上限を超えるときを除く）" />
+                                <TextBox Text="{Binding SplitSizeKb}" Width="64" VerticalAlignment="Center" HorizontalContentAlignment="Right"
+                                         materialDesign:HintAssist.Hint="上限" IsEnabled="{Binding SplitOutput}" />
+                                <TextBlock Text="KB / ファイル" VerticalAlignment="Center" Margin="6,0,0,0" />
+                            </StackPanel>
                             <TextBox Text="{Binding ExcludePatternsText, UpdateSourceTrigger=PropertyChanged}"
                                      materialDesign:HintAssist.Hint="追加除外パターン（1行1件）" MinLines="1" MaxLines="3" />
                         </StackPanel>
@@ -280,7 +287,7 @@
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
-                <UniformGrid Grid.Column="0" Rows="1" Columns="6">
+                <UniformGrid Grid.Column="0" Rows="1" Columns="7">
                     <StackPanel>
                         <TextBlock Text="対象ファイル" Style="{StaticResource StatLabel}" />
                         <TextBlock Text="{Binding Statistics.IncludedFiles, StringFormat={}{0:N0}}" Style="{StaticResource StatValue}" />
@@ -304,6 +311,10 @@
                     <StackPanel>
                         <TextBlock Text="出力サイズ (byte)" Style="{StaticResource StatLabel}" />
                         <TextBlock Text="{Binding Statistics.OutputBytes, StringFormat={}{0:N0}}" Style="{StaticResource StatValue}" />
+                    </StackPanel>
+                    <StackPanel>
+                        <TextBlock Text="保存ファイル数" Style="{StaticResource StatLabel}" />
+                        <TextBlock Text="{Binding Statistics.OutputParts, StringFormat={}{0:N0}}" Style="{StaticResource StatValue}" />
                     </StackPanel>
                 </UniformGrid>
                 <StackPanel Grid.Column="1" MinWidth="230">
