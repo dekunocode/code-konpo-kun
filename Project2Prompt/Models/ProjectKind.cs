@@ -11,4 +11,5 @@ public enum ProjectKind
     Java = 8,
     Go = 16,
     Cpp = 32,
+    VisualBasic6 = 64,
 }

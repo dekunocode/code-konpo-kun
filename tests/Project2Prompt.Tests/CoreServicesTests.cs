@@ -11,6 +11,7 @@ public sealed class CoreServicesTests
     [
         new CSharpProjectProfile(),
         new VisualBasicProjectProfile(),
+        new VisualBasic6ProjectProfile(),
         new PythonProjectProfile(),
         new JavaProjectProfile(),
         new GoProjectProfile(),
@@ -237,6 +238,102 @@ public sealed class CoreServicesTests
             Assert.Contains(result.Files, file => file.RelativePath == "src/Program.cs");
             Assert.DoesNotContain(result.Files, file => file.RelativePath.Contains("Generated.cs", StringComparison.Ordinal));
             Assert.True(result.ExcludedFileCount >= 1);
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Theory]
+    [InlineData("Project1.vbp")]
+    [InlineData("Group/Group1.vbg")]
+    public void ProfileCatalog_DetectsVisualBasic6(string marker)
+    {
+        Assert.Equal(ProjectKind.VisualBasic6, CreateCatalog().Detect([marker]));
+    }
+
+    [Theory]
+    [InlineData("Project1.vbp", true)]
+    [InlineData("Forms/Form1.frm", true)]
+    [InlineData("Modules/Module1.bas", true)]
+    [InlineData("Classes/Class1.cls", true)]
+    [InlineData("Controls/UserControl1.ctl", true)]
+    [InlineData("Forms/Form1.frx", false)]
+    [InlineData("Project1.vbw", false)]
+    [InlineData("Program.cs", false)]
+    public void ProfileCatalog_IncludesVisualBasic6Sources(string path, bool expected)
+    {
+        Assert.Equal(expected, CreateCatalog().IsIncluded(path, ProjectKind.VisualBasic6));
+    }
+
+    [Theory]
+    [InlineData("Form1.frm", "vb6")]
+    [InlineData("Module1.bas", "vb6")]
+    [InlineData("Class1.cls", "vb6")]
+    [InlineData("Project1.vbp", "ini")]
+    [InlineData("Module1.vb", "vbnet")]
+    public void ProfileCatalog_ReturnsVisualBasicFenceLanguage(string path, string expected)
+    {
+        Assert.Equal(expected, CreateCatalog().GetFenceLanguage(path));
+    }
+
+    [Theory]
+    [InlineData("Module1.bas")]
+    [InlineData("Form1.frm")]
+    [InlineData("Module1.vb")]
+    public async Task MarkdownExporter_RemovesVisualBasicComments(string path)
+    {
+        const string content = "Dim s As String ' remove quote\n"
+            + "s = \"It's \"\"quoted\"\" text\" ' remove tail\n"
+            + "Rem remove rem line\n"
+            + "    REM remove indented rem\n"
+            + "x = 1: Rem remove after colon\n"
+            + "RemoveItem 1\n"
+            + "y = 2";
+        var exporter = new MarkdownExporter(new TreeBuilder(), CreateCatalog(), new SecretScanner());
+
+        var result = await exporter.ExportAsync(
+            ["Sample"],
+            [CreateFile(path, content)],
+            new AppSettings { RemoveComments = true },
+            CancellationToken.None);
+
+        Assert.Contains("Dim s As String", result, StringComparison.Ordinal);
+        Assert.Contains("s = \"It's \"\"quoted\"\" text\"", result, StringComparison.Ordinal);
+        Assert.Contains("x = 1:", result, StringComparison.Ordinal);
+        Assert.Contains("RemoveItem 1", result, StringComparison.Ordinal);
+        Assert.Contains("y = 2", result, StringComparison.Ordinal);
+        Assert.DoesNotContain("remove", result, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ProjectScanner_ReadsShiftJisVisualBasic6Project()
+    {
+        System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+        var sjis = System.Text.Encoding.GetEncoding(932);
+        var root = Path.Combine(Path.GetTempPath(), $"Project2PromptTests-VB6-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(root, "Project1.vbp"), "Type=Exe\r\nForm=Form1.frm\r\nModule=Module1; Module1.bas\r\n", sjis);
+            await File.WriteAllTextAsync(
+                Path.Combine(root, "Form1.frm"),
+                "VERSION 5.00\r\nBegin VB.Form Form1\r\n   Caption = \"日本語のフォーム\"\r\nEnd\r\nAttribute VB_Name = \"Form1\"\r\n",
+                sjis);
+            await File.WriteAllTextAsync(Path.Combine(root, "Module1.bas"), "Attribute VB_Name = \"Module1\"\r\n' 日本語のコメント\r\n", sjis);
+            await File.WriteAllBytesAsync(Path.Combine(root, "Form1.frx"), [0x00, 0x01, 0x02]);
+            await File.WriteAllTextAsync(Path.Combine(root, "Project1.vbw"), "Form1 = 0, 0, 0, 0, C\r\n");
+            var scanner = new ProjectScanner(CreateCatalog(), new FileFilterService(), new SecretScanner());
+
+            var result = await scanner.ScanAsync([root], new AppSettings(), null, CancellationToken.None);
+
+            Assert.Equal(ProjectKind.VisualBasic6, result.ProjectKind);
+            Assert.Contains(result.Files, file => file.RelativePath == "Project1.vbp");
+            Assert.Contains(result.Files, file => file.RelativePath == "Form1.frm" && file.Content.Contains("日本語のフォーム", StringComparison.Ordinal));
+            Assert.Contains(result.Files, file => file.RelativePath == "Module1.bas" && file.Content.Contains("日本語のコメント", StringComparison.Ordinal));
+            Assert.DoesNotContain(result.Files, file => file.RelativePath == "Form1.frx");
+            Assert.DoesNotContain(result.Files, file => file.RelativePath == "Project1.vbw");
         }
         finally
         {

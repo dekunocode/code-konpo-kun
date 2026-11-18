@@ -51,6 +51,7 @@ public sealed class ProfileCatalog(IEnumerable<IProjectProfile> profiles) : IPro
     {
         ".cs" => "csharp",
         ".vb" => "vbnet",
+        ".frm" or ".bas" or ".cls" or ".ctl" or ".dsr" or ".pag" or ".dob" => "vb6",
         ".py" or ".pyi" => "python",
         ".java" => "java",
         ".gradle" => "groovy",
@@ -65,7 +66,7 @@ public sealed class ProfileCatalog(IEnumerable<IProjectProfile> profiles) : IPro
         ".json" => "json",
         ".toml" => "toml",
         ".yaml" or ".yml" => "yaml",
-        ".ini" or ".cfg" => "ini",
+        ".ini" or ".cfg" or ".vbp" or ".vbg" => "ini",
         ".md" => "markdown",
         _ => string.Empty,
     };
