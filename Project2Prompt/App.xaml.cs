@@ -32,6 +32,7 @@ public partial class App : Application
     {
         services.AddSingleton<IProjectProfile, CSharpProjectProfile>();
         services.AddSingleton<IProjectProfile, VisualBasicProjectProfile>();
+        services.AddSingleton<IProjectProfile, VisualBasic6ProjectProfile>();
         services.AddSingleton<IProjectProfile, PythonProjectProfile>();
         services.AddSingleton<IProjectProfile, JavaProjectProfile>();
         services.AddSingleton<IProjectProfile, GoProjectProfile>();

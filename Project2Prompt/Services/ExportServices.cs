@@ -212,7 +212,7 @@ internal static partial class CommentStripper
         ".java" or ".gradle" or ".kts" => RemoveCStyle(text),
         ".c" or ".h" or ".cpp" or ".cc" or ".cxx" or ".hpp" or ".hh" or ".hxx" or ".inl" or ".ipp" => RemoveCStyle(text),
         ".go" => RemoveCStyle(text, allowRawBacktickString: true),
-        ".vb" => RemoveLineStyle(text, "'"),
+        ".vb" or ".bas" or ".cls" or ".frm" or ".ctl" or ".dsr" or ".pag" or ".dob" => RemoveVisualBasicComments(text),
         ".py" or ".pyi" => RemovePythonComments(text),
         ".xaml" or ".xml" or ".csproj" or ".vbproj" or ".vcxproj" or ".filters" or ".props" or ".targets" or ".resx" => XmlCommentRegex().Replace(text, string.Empty),
         _ => text,
@@ -298,23 +298,61 @@ internal static partial class CommentStripper
         return result.ToString();
     }
 
-    private static string RemoveLineStyle(string text, string marker) => string.Join('\n', text.Split('\n').Select(line =>
+    /// <summary>
+    /// VB.NET / VB6 の <c>'</c> コメントと <c>Rem</c> コメントを除去します。
+    /// 文字列内の <c>'</c> は残し、<c>""</c> のエスケープにも対応します。
+    /// <c>Rem</c> は行頭か <c>:</c> の直後（文の先頭）にある場合だけコメントとみなします。
+    /// </summary>
+    private static string RemoveVisualBasicComments(string text) => string.Join('\n', text.Split('\n').Select(line =>
     {
         var inString = false;
-        for (var index = 0; index <= line.Length - marker.Length; index++)
+        var atStatementStart = true;
+        for (var index = 0; index < line.Length; index++)
         {
-            if (line[index] == '"')
+            var current = line[index];
+            if (current == '"')
             {
                 inString = !inString;
+                atStatementStart = false;
+                continue;
             }
-            else if (!inString && line.AsSpan(index).StartsWith(marker, StringComparison.Ordinal))
+
+            if (inString)
+            {
+                continue;
+            }
+
+            if (current == '\'')
             {
                 return line[..index];
             }
+
+            if (current == ':')
+            {
+                atStatementStart = true;
+                continue;
+            }
+
+            if (char.IsWhiteSpace(current))
+            {
+                continue;
+            }
+
+            if (atStatementStart && IsRemKeyword(line, index))
+            {
+                return line[..index];
+            }
+
+            atStatementStart = false;
         }
 
         return line;
     }));
+
+    private static bool IsRemKeyword(string line, int index) =>
+        line.Length >= index + 3
+        && line.AsSpan(index, 3).Equals("rem", StringComparison.OrdinalIgnoreCase)
+        && (line.Length == index + 3 || char.IsWhiteSpace(line[index + 3]));
 
     private static string RemovePythonComments(string text)
     {

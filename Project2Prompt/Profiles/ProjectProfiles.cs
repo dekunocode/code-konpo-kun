@@ -55,6 +55,23 @@ public sealed class VisualBasicProjectProfile : ProjectProfileBase
     ];
 }
 
+/// <summary>Visual Basic 6.0用プロファイル。</summary>
+/// <remarks>
+/// .frx / .ctx / .dsx / .pgx / .dox などのバイナリ付属ファイルと、
+/// ウィンドウ配置だけを持つ .vbw は対象にしません。
+/// </remarks>
+public sealed class VisualBasic6ProjectProfile : ProjectProfileBase
+{
+    public override ProjectKind Kind => ProjectKind.VisualBasic6;
+    public override string DisplayName => "VB6";
+    public override IReadOnlyList<string> DetectionPatterns { get; } = ["*.vbp", "*.vbg"];
+    public override IReadOnlyList<string> IncludePatterns { get; } =
+    [
+        "**/*.vbp", "**/*.vbg", "**/*.frm", "**/*.bas", "**/*.cls", "**/*.ctl", "**/*.dsr",
+        "**/*.pag", "**/*.dob", "**/README.md", "**/LICENSE*",
+    ];
+}
+
 /// <summary>Python用プロファイル。</summary>
 public sealed class PythonProjectProfile : ProjectProfileBase
 {

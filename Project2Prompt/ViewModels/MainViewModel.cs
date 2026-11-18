@@ -629,6 +629,7 @@ public partial class MainViewModel : ObservableObject
         var names = new List<string>();
         if (kind.HasFlag(ProjectKind.CSharp)) names.Add("C#");
         if (kind.HasFlag(ProjectKind.VisualBasic)) names.Add("VB.NET");
+        if (kind.HasFlag(ProjectKind.VisualBasic6)) names.Add("VB6");
         if (kind.HasFlag(ProjectKind.Python)) names.Add("Python");
         if (kind.HasFlag(ProjectKind.Java)) names.Add("Java");
         if (kind.HasFlag(ProjectKind.Go)) names.Add("Go");
